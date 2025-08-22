@@ -1,107 +1,117 @@
-import React, { useState, useEffect } from 'react';
-import api from '../service/Api.js';
+import React, { useState, useEffect } from "react";
 
-function Home() {
-  const [busca, setBusca] = useState('');
-  const [tipoBusca, setTipoBusca] = useState('titulo'); // 'titulo', 'autor' ou 'ambos'
-  const [livros, setLivros] = useState([]); // <-- ADICIONADO
+const Home = () => {
+  const [livros, setLivros] = useState([]);
+  const [busca, setBusca] = useState("");
   const [timeoutId, setTimeoutId] = useState(null);
 
-  // Função que monta a query e faz a requisição
-  const buscarLivros = async () => {
-    if (busca.trim() === '') {
-      setLivros([]);
-      return;
-    }
-
-    let query = '';
-    if (tipoBusca === 'titulo') {
-      query = `intitle:${busca}`;
-    } else if (tipoBusca === 'autor') {
-      query = `inauthor:${busca}`;
-    } else if (tipoBusca === 'ambos') {
-      query = `intitle:${busca}+inauthor:${busca}`;
-    }
-
+  const buscarLivros = async (query) => {
+    if (!query) return;
     try {
-      const response = await api.get(`/books/search?query=${query}`);
-      setLivros(response.data.items || []); // <- CORRIGIDO com .items
+      const response = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?q=${query}`
+      );
+      const data = await response.json();
+      if (data.items) {
+        // adiciona status vazio inicialmente
+        const livrosComStatus = data.items.map((livro) => ({
+          ...livro,
+          status: "",
+        }));
+        setLivros(livrosComStatus);
+      }
     } catch (error) {
-      console.error('Erro ao buscar livros:', error);
-      setLivros([]); // <- Em caso de erro, limpa a lista
+      console.error("Erro ao buscar livros:", error);
     }
   };
 
-  // Debounce (espera 500ms após parar de digitar)
-  useEffect(() => {
+  const handleChange = (e) => {
+    const value = e.target.value;
+    setBusca(value);
+
     if (timeoutId) clearTimeout(timeoutId);
-
-    const novoTimeout = setTimeout(() => {
-      buscarLivros();
+    const newTimeoutId = setTimeout(() => {
+      buscarLivros(value);
     }, 500);
+    setTimeoutId(newTimeoutId);
+  };
 
-    setTimeoutId(novoTimeout);
-  }, [busca, tipoBusca]);
+  // Função para salvar/atualizar status no backend
+  const handleStatusChange = async (book, newStatus) => {
+    try {
+      const bookToSave = {
+        title: book.volumeInfo.title,
+        authors: book.volumeInfo.authors || [],
+        description: book.volumeInfo.description || "",
+        thumbnail: book.volumeInfo.imageLinks?.thumbnail || "",
+        status: newStatus,
+      };
 
-  // Enter → busca imediata
-  const handleKeyDown = (event) => {
-    if (event.key === 'Enter') {
-      if (timeoutId) clearTimeout(timeoutId);
-      buscarLivros();
+      if (book.idBanco) {
+        // Já existe no banco -> PATCH apenas status
+        await fetch(`http://localhost:8080/api/books/${book.idBanco}/status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        });
+      } else {
+        // Ainda não existe -> POST livro completo
+        const response = await fetch("http://localhost:8080/api/books", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bookToSave),
+        });
+
+        const savedBook = await response.json();
+        book.idBanco = savedBook.id; // guarda o id do banco no objeto
+      }
+
+      // Atualiza estado local
+      setLivros((prevLivros) =>
+        prevLivros.map((l) =>
+          l.id === book.id
+            ? { ...l, status: newStatus, idBanco: book.idBanco }
+            : l
+        )
+      );
+    } catch (error) {
+      console.error("Erro ao salvar/atualizar livro:", error);
     }
   };
 
   return (
-    <div style={{ padding: '20px' }}>
-      <h1>Buscar Livros</h1>
-
-      {/* Campo de busca */}
+    <div>
+      <h1>Biblioteca</h1>
       <input
         type="text"
-        placeholder="Digite sua busca"
+        placeholder="Buscar livros..."
         value={busca}
-        onChange={(e) => setBusca(e.target.value)}
-        onKeyDown={handleKeyDown}
-        style={{ width: '300px', padding: '8px', fontSize: '16px' }}
+        onChange={handleChange}
       />
-
-      {/* Seletor de tipo de busca */}
-      <select
-        value={tipoBusca}
-        onChange={(e) => setTipoBusca(e.target.value)}
-        style={{ marginLeft: '10px', padding: '8px', fontSize: '16px' }}
-      >
-        <option value="titulo">Título</option>
-        <option value="autor">Autor</option>
-        <option value="ambos">Título + Autor</option>
-      </select>
-
-      {/* Lista de livros */}
-      <div style={{ marginTop: '20px' }}>
-        {livros.length === 0 && <p>Nenhum livro encontrado.</p>}
-
-        {livros.map((livro, index) => {
-          const info = livro.volumeInfo || {};
-          return (
-            <div
-              key={index}
-              style={{
-                border: '1px solid #ccc',
-                padding: '10px',
-                marginBottom: '10px',
-                borderRadius: '5px'
-              }}
-            >
-              <h3>{info.title}</h3>
-              <p><strong>Autor:</strong> {info.authors ? info.authors.join(', ') : 'Desconhecido'}</p>
-              <p><strong>Editora:</strong> {info.publisher || 'Desconhecida'}</p>
-              <p><strong>Ano:</strong> {info.publishedDate || 'Indefinido'}</p>
+      <div className="livros-container">
+        {livros.map((livro) => (
+          <div key={livro.id} className="livro-card">
+            <img
+              src={livro.volumeInfo.imageLinks?.thumbnail}
+              alt={livro.volumeInfo.title}
+            />
+            <h3>{livro.volumeInfo.title}</h3>
+            <p>{livro.volumeInfo.authors?.join(", ")}</p>
+            <p>{livro.volumeInfo.description}</p>
+            <div className="botoes">
+              <button onClick={() => handleStatusChange(livro, "JA_LI")}>
+                Já li
+              </button>
+              <button onClick={() => handleStatusChange(livro, "QUERO_LER")}>
+                Quero ler
+              </button>
+              <p>Status: {livro.status || "Nenhum"}</p>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </div>
   );
-}
+};
 
 export default Home;
