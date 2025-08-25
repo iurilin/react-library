@@ -1,42 +1,42 @@
-import React, { useState, useEffect } from "react";
+"use client"
+
+import { useState } from "react"
+import { Link } from "react-router-dom"
+import "../app/Home.css"
 
 const Home = () => {
-  const [livros, setLivros] = useState([]);
-  const [busca, setBusca] = useState("");
-  const [timeoutId, setTimeoutId] = useState(null);
+  const [livros, setLivros] = useState([])
+  const [busca, setBusca] = useState("")
+  const [timeoutId, setTimeoutId] = useState(null)
 
   const buscarLivros = async (query) => {
-    if (!query) return;
+    if (!query) return
     try {
-      const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=${query}`
-      );
-      const data = await response.json();
+      const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}`)
+      const data = await response.json()
       if (data.items) {
-        // adiciona status vazio inicialmente
         const livrosComStatus = data.items.map((livro) => ({
           ...livro,
           status: "",
-        }));
-        setLivros(livrosComStatus);
+        }))
+        setLivros(livrosComStatus)
       }
     } catch (error) {
-      console.error("Erro ao buscar livros:", error);
+      console.error("Erro ao buscar livros:", error)
     }
-  };
+  }
 
   const handleChange = (e) => {
-    const value = e.target.value;
-    setBusca(value);
+    const value = e.target.value
+    setBusca(value)
 
-    if (timeoutId) clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId)
     const newTimeoutId = setTimeout(() => {
-      buscarLivros(value);
-    }, 500);
-    setTimeoutId(newTimeoutId);
-  };
+      buscarLivros(value)
+    }, 500)
+    setTimeoutId(newTimeoutId)
+  }
 
-  // Função para salvar/atualizar status no backend
   const handleStatusChange = async (book, newStatus) => {
     try {
       const bookToSave = {
@@ -45,73 +45,104 @@ const Home = () => {
         description: book.volumeInfo.description || "",
         thumbnail: book.volumeInfo.imageLinks?.thumbnail || "",
         status: newStatus,
-      };
+      }
 
       if (book.idBanco) {
-        // Já existe no banco -> PATCH apenas status
         await fetch(`http://localhost:8080/api/books/${book.idBanco}/status`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: newStatus }),
-        });
+        })
       } else {
-        // Ainda não existe -> POST livro completo
         const response = await fetch("http://localhost:8080/api/books", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(bookToSave),
-        });
+        })
 
-        const savedBook = await response.json();
-        book.idBanco = savedBook.id; // guarda o id do banco no objeto
+        const savedBook = await response.json()
+        book.idBanco = savedBook.id
       }
 
-      // Atualiza estado local
       setLivros((prevLivros) =>
-        prevLivros.map((l) =>
-          l.id === book.id
-            ? { ...l, status: newStatus, idBanco: book.idBanco }
-            : l
-        )
-      );
+        prevLivros.map((l) => (l.id === book.id ? { ...l, status: newStatus, idBanco: book.idBanco } : l)),
+      )
     } catch (error) {
-      console.error("Erro ao salvar/atualizar livro:", error);
+      console.error("Erro ao salvar/atualizar livro:", error)
     }
-  };
+  }
 
   return (
-    <div>
-      <h1>Biblioteca</h1>
-      <input
-        type="text"
-        placeholder="Buscar livros..."
-        value={busca}
-        onChange={handleChange}
-      />
-      <div className="livros-container">
-        {livros.map((livro) => (
-          <div key={livro.id} className="livro-card">
-            <img
-              src={livro.volumeInfo.imageLinks?.thumbnail}
-              alt={livro.volumeInfo.title}
-            />
-            <h3>{livro.volumeInfo.title}</h3>
-            <p>{livro.volumeInfo.authors?.join(", ")}</p>
-            <p>{livro.volumeInfo.description}</p>
-            <div className="botoes">
-              <button onClick={() => handleStatusChange(livro, "JA_LI")}>
-                Já li
-              </button>
-              <button onClick={() => handleStatusChange(livro, "QUERO_LER")}>
-                Quero ler
-              </button>
-              <p>Status: {livro.status || "Nenhum"}</p>
+    <div className="home-container">
+      <div className="header">
+        <div className="header-content">
+          <h1 className="logo">Minha Biblioteca Pessoal</h1>
+          <nav>
+            <Link to="/meus-livros" className="nav-link">
+              Meus Livros Salvos
+            </Link>
+          </nav>
+        </div>
+      </div>
+
+      <div className="main-content">
+        <div className="search-container">
+          <input
+            type="text"
+            placeholder="Buscar por título ou autor..."
+            value={busca}
+            onChange={handleChange}
+            className="search-input"
+          />
+        </div>
+
+        <div className="books-grid">
+          {livros.map((livro) => (
+            <div key={livro.id} className="book-card">
+              <div className="book-content">
+                <img
+                  src={
+                    livro.volumeInfo.imageLinks?.thumbnail || "/placeholder.svg?height=200&width=150&query=book cover"
+                  }
+                  alt={livro.volumeInfo.title}
+                  className="book-cover"
+                />
+                <div className="book-info">
+                  <h3 className="book-title">{livro.volumeInfo.title}</h3>
+                  <p className="book-author">{livro.volumeInfo.authors?.join(", ") || "Autor desconhecido"}</p>
+                  <p className="book-description">
+                    {livro.volumeInfo.description
+                      ? livro.volumeInfo.description.substring(0, 150) + "..."
+                      : "Sem descrição disponível"}
+                  </p>
+                  <div className="book-actions">
+                    <button
+                      onClick={() => handleStatusChange(livro, "QUERO_LER")}
+                      className={`status-button want-to-read ${livro.status === "QUERO_LER" ? "active" : ""}`}
+                    >
+                      Quero Ler
+                    </button>
+                    <button
+                      onClick={() => handleStatusChange(livro, "LENDO")}
+                      className={`status-button reading ${livro.status === "LENDO" ? "active" : ""}`}
+                    >
+                      Lendo
+                    </button>
+                    <button
+                      onClick={() => handleStatusChange(livro, "LIDO")}
+                      className={`status-button already-read ${livro.status === "LIDO" ? "active" : ""}`}
+                    >
+                      Já Li
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Home;
+export default Home
